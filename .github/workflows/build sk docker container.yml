@@ -229,15 +229,9 @@ jobs:
         run: |
           tags=$(cat docker_tags_${{ matrix.os }}.txt | sed 's/,/\n/g')
           ghcr_tags=$(echo "$tags" | grep "ghcr.io")
-          hub_tags=$(echo "$tags" | grep -v "ghcr.io")
           {
             echo 'GHCR_IMAGES<<EOF'
             printf "%s\n" "$ghcr_tags"
-            echo 'EOF'
-          } >> "$GITHUB_OUTPUT"
-          {
-            echo 'HUB_IMAGES<<EOF'
-            printf "%s\n" "$hub_tags"
             echo 'EOF'
           } >> "$GITHUB_OUTPUT"
       - name: Login to ghcr.io
@@ -264,20 +258,14 @@ jobs:
         uses: regclient/actions/regctl-installer@main
       - name: Copy manifests from GHCR to Docker Hub
         run: |
-          ghcr_tags="${{ steps.set_images.outputs.GHCR_IMAGES }}"
-          hub_tags="${{ steps.set_images.outputs.HUB_IMAGES }}"
-          ghcr_array=()
-          hub_array=()
-          while IFS= read -r line; do
-            [[ -n "$line" ]] && ghcr_array+=("$line")
-          done <<< "$ghcr_tags"
-          while IFS= read -r line; do
-            [[ -n "$line" ]] && hub_array+=("$line")
-          done <<< "$hub_tags"
-          for i in "${!ghcr_array[@]}"; do
-            echo "Copying ${ghcr_array[$i]} to ${hub_array[$i]}"
-            regctl image copy "${ghcr_array[$i]}" "${hub_array[$i]}"
-          done
+          # Copy only the manifest tags (not intermediate arch images)
+          # These match the tags from: ${{ steps.set_images.outputs.GHCR_IMAGES }} and ghcr.io/..:${{ matrix.tag }}
+          while IFS= read -r ghcr_tag; do
+            [[ -z "$ghcr_tag" ]] && continue
+            hub_tag=$(echo "$ghcr_tag" | sed 's|ghcr.io/kegustafsson/signalk-server|kgustafs/signalk-server|')
+            echo "Copying $ghcr_tag to $hub_tag"
+            regctl image copy "$ghcr_tag" "$hub_tag"
+          done <<< "${{ steps.set_images.outputs.GHCR_IMAGES }}"
           echo "Copying ghcr.io/kegustafsson/signalk-server:${{ matrix.tag }} to kgustafs/signalk-server:${{ matrix.tag }}"
           regctl image copy ghcr.io/kegustafsson/signalk-server:${{ matrix.tag }} kgustafs/signalk-server:${{ matrix.tag }}
 
